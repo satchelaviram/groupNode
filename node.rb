@@ -10,8 +10,11 @@ require 'socket'
 def edgeb(cmd)
 	s = Socket.new Socket::INET, Socket::SOCK_STREAM
 	s.connect Socket.pack_sockaddr_in(port, 'connection')
+
+
+	puts " Hello "
 	
-	
+
 end
 
 def dumptable(cmd)
