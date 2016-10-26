@@ -97,7 +97,7 @@ def setup(hostname, port)
 
 end
 
-setup(ARGV[0], ARGV[1])
+setup(ARGV[0], ARGV[1], ARGV[2], ARGV[3])
 
 
 
