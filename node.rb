@@ -7,6 +7,7 @@ $hostname = nil
 
 def edgeb(cmd)
 	STDOUT.puts "EDGE: not implemented"
+	puts "This is a test"
 end
 
 def dumptable(cmd)
@@ -90,3 +91,8 @@ def setup(hostname, port)
 end
 
 setup(ARGV[0], ARGV[1])
+
+
+
+
+
