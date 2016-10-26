@@ -1,13 +1,17 @@
 $port = nil
 $hostname = nil
 
+require 'socket'
+
 
 
 # --------------------- Part 0 --------------------- # 
 
 def edgeb(cmd)
-	STDOUT.puts "EDGE: not implemented"
-	puts "This is a test"
+	s = Socket.new Socket::INET, Socket::SOCK_STREAM
+	s.connect Socket.pack_sockaddr_in(port, 'connection')
+	
+	
 end
 
 def dumptable(cmd)
