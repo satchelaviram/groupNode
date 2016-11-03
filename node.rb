@@ -7,13 +7,22 @@ require 'socket'
 
 # --------------------- Part 0 --------------------- # 
 
-def edgeb(cmd)
+def edgeb(edge, srcip, dstip, dst)
+	rt = Hash.new
+	edgeHash = Hash.new
+
 	s = Socket.new Socket::INET, Socket::SOCK_STREAM
-	s.connect Socket.pack_sockaddr_in($port, 'connection')
+	s.connect Socket.pack_sockaddr_in($port, srcip)
+
+	serv = TCPServer.new(dstip, $port)
+	s = serv.accept
 
 
-	
-	
+	edgeHash[edge] = 1
+	rt[dst] = edgeHash
+
+
+		
 
 end
 
@@ -98,8 +107,3 @@ def setup(hostname, port)
 end
 
 setup(ARGV[0], ARGV[1], ARGV[2], ARGV[3])
-
-
-
-
-
