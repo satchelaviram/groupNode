@@ -1,41 +1,88 @@
+require 'socket'
 $port = nil
 $hostname = nil
 $node_info = nil
-$rt = nil
-require 'socket'
+$rt = Hash.new  #Static variable so that we can change the dst nodes routing table for edgeB
+$thread = nil
+$serv = nil
+
 
 # --------------------- Part 0 --------------------- # 
+=begin
+def open_port(host, port)
+      sock = Socket.new(:INET, :STREAM)
+      raw = Socket.sockaddr_in(port, host)
+      #puts "#{port} open." if 
+      sock.connect(raw)
+
+      rescue (Errno::ECONNREFUSED)
+      rescue(Errno::ETIMEDOUT)
+end
+
+=end
+
+
+
+
+
+
+
+
+
 
 def edgeb(cmd)
+
+    sock = TCPSocket.open(cmd[1], $port)
+
+    $thread = Thread.new { 
+        sock = $serv.accept
+    }
     
-    #s = Socket.new Socket::INET, Socket::SOCK_STREAM
-    #s.connect Socket.pack_sockaddr_in($port, srcip)
-
-    #serv = TCPServer.new(dstip, $port)
-    #s = serv.accept
-
     if($rt[$hostname] != nil)
-    	$rt[$hostname].nexthop = cmd[2]
+        $rt[$hostname].nexthop = cmd[2]
     else
-    	node = $node_info.new
-    	node.src = $hostname
-    	node.dst = cmd[2]
-    	node.cost = 1
-    	node.nexthop = cmd[2]
-    	$rt[$hostname] = node
+        node = $node_info.new
+        node.src = $hostname
+        node.dst = cmd[2]
+        node.cost = 1
+        node.nexthop = cmd[2] 
+       $rt[$hostname] = node
+        
+            
     end
+
+    sock.write("EDGEB #{cmd[1]} #{cmd[0]} #{$hostname}")
+    
+    dest = node.dst
+    
+    
+    if($rt[dest] != nil)  
+        $rt[dest].nexthop = $hostname
+    else
+        node = $node_info.new
+        node.src = cmd[2]
+        node.dst = $hostname
+        node.cost = 1
+        node.nexthop = $hostname
+        $rt[dest]= node
+    end
+        
 
 
 end
 
 def dumptable(cmd)
-	file = File.open(cmd[0], 'w')
-	$rt.each {|node, str| file.write "#{str[:src]},#{str[:dst]},#{str[:nexthop]},#{str[:cost]}\n"}
+    file = File.open(cmd[0], 'w')
+   $rt.each {|node, str| file.write "#{str[:src]},#{str[:dst]},#{str[:nexthop]},#{str[:cost]}\n"}
 end
 
 def shutdown(cmd)
     STDOUT.flush
-    close(serv)
+    Thread.kill($thread)
+    while(line = STDIN.gets())
+        #Thread.kill($thread) #--(2)--
+        shutdown()
+    end
     exit(0)
 end
 
@@ -98,13 +145,13 @@ def main()
 end
 
 def setup(hostname, port, nodes, config)
-    $hostname = hostname
-    $port = port
-    $rt = Hash.new
-    $node_info = Struct.new(:src, :dst, :cost, :nexthop)
     #set up ports, server, buffers
+    $hostname = hostname
+    $port = port.to_i
+    $node_info = Struct.new(:src, :dst, :cost, :nexthop)
 
-
+    serv = TCPServer.open($port)
+ 
     
 
     main()
