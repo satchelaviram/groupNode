@@ -1,88 +1,60 @@
 require 'socket'
-$port = nil
+require 'thread'
+
+$p = nil
 $hostname = nil
 $node_info = nil
-$rt = Hash.new  #Static variable so that we can change the dst nodes routing table for edgeB
-$thread = nil
+$rt = Hash.new 
 $serv = nil
-
+$nodesFile = {}
+$clock = nil
 
 # --------------------- Part 0 --------------------- # 
-=begin
-def open_port(host, port)
-      sock = Socket.new(:INET, :STREAM)
-      raw = Socket.sockaddr_in(port, host)
-      #puts "#{port} open." if 
-      sock.connect(raw)
+def edgeb_stdin(cmd)
 
-      rescue (Errno::ECONNREFUSED)
-      rescue(Errno::ETIMEDOUT)
+    node = $node_info.new   
+    node.src = $hostname
+    node.dst = cmd[2]
+    node.cost = 1
+    node.nexthop = cmd[2] 
+    $rt[$hostname] = node
+
+    client = TCPSocket.open(cmd[0], $p)
+    client.puts("#{cmd[2]},#{$hostname}")
+    edgeb_network(cmd[0])
+    client.close
+
 end
 
-=end
+def edgeb_network(cmd)
 
+    thread = Thread.start($serv.accept) do |client|
 
+        message = client.gets.chomp
 
+        arr = message.split(/,/)
+        my_name = arr[0]
+        src_name = arr[1]
 
-
-
-
-
-
-
-def edgeb(cmd)
-
-    sock = TCPSocket.open(cmd[1], $port)
-
-    $thread = Thread.new { 
-        sock = $serv.accept
-    }
-    
-    if($rt[$hostname] != nil)
-        $rt[$hostname].nexthop = cmd[2]
-    else
-        node = $node_info.new
-        node.src = $hostname
-        node.dst = cmd[2]
-        node.cost = 1
-        node.nexthop = cmd[2] 
-       $rt[$hostname] = node
-        
-            
+        node1 = $node_info.new        
+        node1.src = my_name
+        node1.dst = src_name
+        node1.cost = 1
+        node1.nexthop = src_name
+        $rt[my_name] = node1
     end
 
-    sock.write("EDGEB #{cmd[1]} #{cmd[0]} #{$hostname}")
-    
-    dest = node.dst
-    
-    
-    if($rt[dest] != nil)  
-        $rt[dest].nexthop = $hostname
-    else
-        node = $node_info.new
-        node.src = cmd[2]
-        node.dst = $hostname
-        node.cost = 1
-        node.nexthop = $hostname
-        $rt[dest]= node
-    end
-        
-
+    thread.join
 
 end
 
 def dumptable(cmd)
     file = File.open(cmd[0], 'w')
-   $rt.each {|node, str| file.write "#{str[:src]},#{str[:dst]},#{str[:nexthop]},#{str[:cost]}\n"}
+    $rt.each {|node, str| file.write "#{str[:src]},#{str[:dst]},#{str[:nexthop]},#{str[:cost]}\n"}
 end
 
 def shutdown(cmd)
     STDOUT.flush
-    Thread.kill($thread)
-    while(line = STDIN.gets())
-        #Thread.kill($thread) #--(2)--
-        shutdown()
-    end
     exit(0)
 end
 
@@ -118,7 +90,6 @@ def ftp(cmd)
     STDOUT.puts "FTP: not implemented"
 end
 
-
 # do main loop here.... 
 def main()
 
@@ -128,7 +99,7 @@ def main()
         cmd = arr[0]
         args = arr[1..-1]
         case cmd
-        when "EDGEB"; edgeb(args)
+        when "EDGEB"; edgeb_stdin(args)
         when "EDGED"; edged(args)
         when "EDGEW"; edgew(args)
         when "DUMPTABLE"; dumptable(args)
@@ -140,6 +111,7 @@ def main()
         when "FTP"; ftp(args)
         else STDERR.puts "ERROR: INVALID COMMAND \"#{cmd}\""
         end
+
     end
 
 end
@@ -147,15 +119,30 @@ end
 def setup(hostname, port, nodes, config)
     #set up ports, server, buffers
     $hostname = hostname
-    $port = port.to_i
+    $p = port.to_i
     $node_info = Struct.new(:src, :dst, :cost, :nexthop)
 
-    serv = TCPServer.open($port)
- 
+    $serv = TCPServer.open($p) 
     
+    fHandle = File.open(nodes)
+    while(line = fHandle.gets())
+        arr = line.chomp().split(',')
 
+        node_name = arr[0]
+        node_port = arr[1]
+        $nodesFile[node_name] = {}
+        $nodesFile[node_name]["PORT"] = node_port.to_i
+            
+    end
+
+    $clock = Time.now
     main()
 
 end
 
 setup(ARGV[0], ARGV[1], ARGV[2], ARGV[3])
+
+
+
+
+
