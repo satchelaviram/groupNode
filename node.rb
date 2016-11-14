@@ -12,6 +12,93 @@ $local_ip = nil #Local Ip given in
 $lock = Mutex.new #Lock to ensure the program is thread safe
 $record_ip = nil
 
+class Connection
+    attr_accessor :source, :dest, :cost
+
+    def initialize(source, dest, cost = 1)
+        @source = source
+        @dest = dest
+        @cost = cost
+    end
+end
+
+class Network
+    attr_accessor :link
+
+    def initialize
+        @link = []
+    end
+
+    def undir_connection(source, dest, cost = 1)
+        @link.unshift Connection.new source, dest, cost
+        @link.unshift Connection.new dest, source, cost
+    end
+
+    def update_cost(source, dest, cost)
+        @link.each {|node|
+            if node.source == source && node.dest == dest
+                node.cost = cost
+            end
+        }
+    end
+
+    def adjacent(source)
+        list = Array.new
+
+        @link.each {|node|
+            if node.source == source
+                list.push node
+            end
+        }
+        return list.uniq!
+    end
+
+    def lowest_cost
+        node = link.shift
+        low = node
+        val = node.cost
+
+        @link.each {|node|
+            if node.cost < val
+                low = node
+                val = node.cost
+            end
+        }
+        return node
+    end
+
+    def dijkstra(source, dest)
+        queue = Array.new
+        dist = Hash.new
+        prev = Hash.new
+
+        @link.each {|node|
+            dist[node] = Float::INFINITY
+            prev[node] = nil
+            queue.push node
+        }
+
+        dist[source] = Float::INFINITY
+
+        while !queue.empty
+            curr = queue.lowest_cost
+            queue.delete(node)
+
+            neighbor(node.source).each {|node|
+                temp = dist[curr] + node.cost
+
+                if temp < dist[node]
+                    dist[node] = temp
+                    prev[node] = curr
+                end
+            }
+        end
+        return prev
+
+    end
+end
+
+
 # --------------------- Part 0 --------------------- # 
 def edgeb_stdin(cmd)
     $record_ip[$hostname] = cmd[0]
@@ -85,7 +172,6 @@ def edged_network(cmd)
         }
     }
 end
-
 
 def edgeu(cmd)
     ip = record_ip[$hostname]
