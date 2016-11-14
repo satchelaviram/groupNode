@@ -67,6 +67,15 @@ class Network
         return node
     end
 
+    def remove_edge(del)
+        @link.each {|node|
+            if node.source == del || node.dst == del
+                @link.delete(node)
+            end
+        }
+    end
+
+
     def dijkstra(source, dest)
         queue = Array.new
         dist = Hash.new
@@ -113,6 +122,9 @@ def edgeb_stdin(cmd)
         $rt[cmd[2]] = node
         if $local_ip == nil then local_ip = cmd[0] end
     }
+
+    network.undir_connection($hostname, cmd[2])
+
     client = TCPSocket.open(cmd[1], $nodesFile[cmd[2]]["PORT"])
     client.puts("EDGEB2,#{cmd[2]},#{$hostname},#{cmd[1]}")     
 
@@ -132,7 +144,6 @@ def edgeb_network(cmd)
         if $local_ip == nil then local_ip = cmd[2] end
     }
     puts "THIS IS THE ROUTING TABLE: #{$rt}"
-
 end
 
 def dumptable(cmd)
@@ -153,6 +164,7 @@ end
 # --------------------- Part 1 --------------------- # 
 def edged(cmd)
     ip = record_ip[$hostname]
+    network.remove_edge(cmd[0])
 
     $rt.each {|node, str| 
         if str[:dst] == cmd[0]
@@ -175,6 +187,8 @@ end
 
 def edgeu(cmd)
     ip = record_ip[$hostname]
+
+    network.update_cost($hostname, cmd[0], cmd[1])
 
     $rt.each {|node, str| 
         if str[:dst] == cmd[0]
@@ -292,6 +306,7 @@ def setup(hostname, port, nodes, config)
     $p = port.to_i
     $node_info = Struct.new(:src, :dst, :cost, :nexthop)
     $record_ip = Hash.new
+    network = Network.new
 
     $serv = TCPServer.open($p)
     
