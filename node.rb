@@ -6,19 +6,27 @@ $hostname = nil #Nodes name
 $node_info = nil #Struct for nodes rt
 $rt = Hash.new #{destNode,Nodestruct}Basic Routing Table made in part 0. May be redone to graph for dijkstras
 $serv = nil #Server for that handles messages from other nodes
-$nodesFile = {} # A hash mapping {srcNode, {string, /Node info/}} from nodes file
+$nodesFile = {} # A hash mapping {Node, {string, /Node info/}} from nodes file
+$updateInterval = nil #update interval from config file
+$maxPayload = nil #maxPayload from config file
+$ping_timeout = nil #pingTimeout from config file
+
+
 $clock = nil #Clock to keep the time of the program
 $local_ip = nil #Local Ip given in
-$lock = Mutex.new #Lock to ensure the program is thread safe
+
+$lock = Mutex.new #Lock for other shared resourcesA
 $record_ip = nil
+$network = nil #Graph for network topology
 
 class Connection
-    attr_accessor :source, :dest, :cost
+    attr_accessor :source, :dest, :cost , :time
 
-    def initialize(source, dest, cost = 1)
+    def initialize(source, dest, time, cost)
         @source = source
         @dest = dest
         @cost = cost
+        @time = time
     end
 end
 
@@ -29,47 +37,58 @@ class Network
         @link = []
     end
 
-    def undir_connection(source, dest, cost = 1)
-        @link.unshift Connection.new source, dest, cost
-        @link.unshift Connection.new dest, source, cost
+    def undir_connection(source, dest, time, cost)
+        @link.unshift Connection.new source, dest, time, cost 
+        @link.unshift Connection.new dest, source, time, cost 
     end
 
-    def update_cost(source, dest, cost)
+    def update_cost(source, dest, cost, time)
         @link.each {|node|
-            if node.source == source && node.dest == dest
+            if ((node.source == source && node.dest == dest) || (node.source == dest && node.dest == source))
                 node.cost = cost
+                node.time = time
             end
         }
     end
 
+    def get_time(src, dest)
+        @link.each {|node|
+            if ((node.source == src && node.dest == dest) || (node.source == dest && node.dest == src))
+                return node.time
+            end
+        }
+        return 0
+
+    end
+
     def adjacent(source)
-        list = Array.new
+        list = []
 
         @link.each {|node|
             if node.source == source
                 list.push node
             end
         }
-        return list.uniq!
+
+        return list
     end
 
-    def lowest_cost
-        node = link.shift
-        low = node
-        val = node.cost
+    def lowest_cost(arr)
+        val = 100000000
+        ret = nil
 
-        @link.each {|node|
+        arr.each {|node|
             if node.cost < val
-                low = node
+                ret = node
                 val = node.cost
             end
         }
-        return node
+        return ret
     end
 
-    def remove_edge(del)
+    def remove_edge(src,dst)
         @link.each {|node|
-            if node.source == del || node.dst == del
+            if ((node.source == src && node.dest == dst) || (node.source == dst && node.dest == src))
                 @link.delete(node)
             end
         }
@@ -77,23 +96,36 @@ class Network
 
 
     def dijkstra(source, dest)
+        puts "IN DIJKSTRA"
+
+        arr = []
+
         queue = Array.new
         dist = Hash.new
         prev = Hash.new
 
         @link.each {|node|
-            dist[node] = Float::INFINITY
+            dist[node] = 1000000000
             prev[node] = nil
             queue.push node
         }
 
-        dist[source] = Float::INFINITY
+        dist[source] = 1000000000
 
-        while !queue.empty
-            curr = queue.lowest_cost
-            queue.delete(node)
+        queue.each{|node|
+            puts "NODE NAME: #{node.source}"
+        }
 
-            neighbor(node.source).each {|node|
+        puts "DISTANCE HASH IS: #{dist}"
+
+
+        while queue.empty? != true
+            curr = lowest_cost(queue)
+            queue.delete(curr)
+
+            n = adjacent(curr.source)
+
+            n.each {|node|
                 temp = dist[curr] + node.cost
 
                 if temp < dist[node]
@@ -102,46 +134,63 @@ class Network
                 end
             }
         end
-        return prev
+
+        puts "THE SOURCE IS: #{source}"
+        puts "THE DEST IS: #{dest}"
+
+        puts "PREV IS #{prev}"
+        puts "DIST is #{dist[dest]}"
+
+        arr[0] = prev
+        arr[1] = dist[dest]
+
+        return arr
 
     end
 end
 
-
 # --------------------- Part 0 --------------------- # 
+#cmd[0] : ip of currNode 
+#cmd[1] : ip of destNode
+#cmd[2] : name of destNode
 def edgeb_stdin(cmd)
     $record_ip[$hostname] = cmd[0]
     $record_ip[cmd[2]] = cmd[1]
-
-    lock.synchronize{
-        node = $node_info.new   
+    node = $node_info.new  
+    time = nil
+    $lock.synchronize{ 
         node.src = $hostname
         node.dst = cmd[2]
         node.cost = 1
-        node.nexthop = cmd[2] 
+        node.nexthop = cmd[2]
+        time = $clock.to_i
         $rt[cmd[2]] = node
         if $local_ip == nil then local_ip = cmd[0] end
+
+        $network.undir_connection($hostname, cmd[2], time, 1)
     }
 
-    network.undir_connection($hostname, cmd[2])
-
     client = TCPSocket.open(cmd[1], $nodesFile[cmd[2]]["PORT"])
-    client.puts("EDGEB2,#{cmd[2]},#{$hostname},#{cmd[1]}")     
-
+    client.puts("EDGEB2 #{cmd[2]} #{$hostname} #{cmd[1]} #{time}")     
+    
 end
 
+#cmd[0] : name of currNode 
+#cmd[1] : name of destNode
+#cmd[2] : ip of currNode
+#cmd[3] : time edge was made
 def edgeb_network(cmd)
-
-    puts "I AM HERE"
-
-    lock.synchronize{
-        node = $node_info.new   
+    node = $node_info.new 
+    $lock.synchronize{
+          
         node.src = $hostname
         node.dst = cmd[1]
         node.cost = 1
-        node.nexthop = cmd[1] 
+        node.nexthop = cmd[1]
         $rt[cmd[1]] = node
         if $local_ip == nil then local_ip = cmd[2] end
+
+       $network.undir_connection($hostname, cmd[1], cmd[3].to_i, 1) 
     }
     puts "THIS IS THE ROUTING TABLE: #{$rt}"
 end
@@ -150,7 +199,9 @@ def dumptable(cmd)
     sleep(1)
     file = File.open(cmd[0], 'w')
     puts "ABOUT TO PRINT THE ROUTING TABLE: #{$rt}"
-    $rt.each {|node, str| file.write "#{str[:src]},#{str[:dst]},#{str[:nexthop]},#{str[:cost]}\n"}
+    $lock.synchronize{
+      $rt.each {|node, str| file.write "#{str[:src]},#{str[:dst]},#{str[:nexthop]},#{str[:cost]}\n"}
+    }
 end
 
 def shutdown(cmd)
@@ -161,62 +212,66 @@ def shutdown(cmd)
     exit(0)
 end
 
-# --------------------- Part 1 --------------------- # 
+# --------------------- Part 1 --------------------- #
+#Dest of node to remove edge from 
 def edged(cmd)
-    ip = record_ip[$hostname]
-    network.remove_edge(cmd[0])
+    $lock.synchronize{  
+        $network.remove_edge($hostname,cmd[0])
 
-    $rt.each {|node, str| 
-        if str[:dst] == cmd[0]
-            str = nil
+        if $rt.has_key? cmd[0]
+           $rt.delete cmd[0] 
         end
-        client = TCPSocket.open(ip, $nodesFile[str[:nexthop]]["PORT"])
-        client.puts("EDGEU2,#{cmd[0]},#{cmd[1]}") 
+
     }
 end
 
-def edged_network(cmd)
-    lock.synchronize{
-        $rt.each {|node, str| 
-            if str[:dst] == cmd[0]
-                str = nil
-            end
-        }
-    }
-end
-
+#cmd[0] : DEST
+#cmd[1] : COST
 def edgeu(cmd)
-    ip = record_ip[$hostname]
+    time = nil
+    $lock.synchronize{
+       time = $clock.to_i
+        $network.update_cost($hostname, cmd[0], cmd[1].to_i, time)
 
-    network.update_cost($hostname, cmd[0], cmd[1])
-
-    $rt.each {|node, str| 
-        if str[:dst] == cmd[0]
-            str[:cost] = cmd[1]
+        if $rt.has_key? cmd[0]
+            $rt[cmd[0]][:cost] = cmd[1].to_i
         end
-        client = TCPSocket.open(ip, $nodesFile[str[:nexthop]["PORT"])
-        client.puts("EDGEU2,#{cmd[0]},#{cmd[1]}") 
+    } 
+
+    client = TCPSocket.open($local_ip, $nodesFile[cmd[0]]["PORT"])
+    client.puts("EDGEU2 #{$hostname} #{cmd[1]} #{time}") 
+     
+end
+
+#cmd[0] : DEST
+#cmd[1] : COST
+#cmd[2] : Time of updated edge
+def edgeu_network(cmd)
+     $lock.synchronize{
+        $network.update_cost($hostname, cmd[0], cmd[1].to_i,cmd[2].to_i)
+        
+         if $rt.has_key? cmd[0]
+            $rt[cmd[0]][:cost] = cmd[1].to_i
+        end
     }
 end
 
-def edgeu_network(cmd)
-    lock.synchronize{
-        $rt.each {|node, str| 
-            if str[:dst] == cmd[0]
-                str[:cost] = cmd[1]
-            end
-        }
-    }
-end
 
 def status()
-=begin
+
     string = "#{$hostname},#{port}"
-    lock.synchronize{
-        $rt.each {|node, str| string << ",#{str[:dst]}"} #Need to make sure this is lexical order
-    }
-=end
-    STDOUT.puts "STATUS: not implemented"#string
+
+    neighbors = nil
+
+    $lock.synchronize{
+        neighbors = $network.adjacency
+    }    
+    if neighbors != nil
+        neighbors.sort!
+        neighbors.each {|node| string << ",#{node.dest}"} #Need to make sure this is lexical order
+    end
+
+    STDOUT.puts string
 end
 
 
@@ -241,7 +296,7 @@ end
 def main()
 
     while(line = STDIN.gets())
-        puts "Main() #{Thread.current}"
+    
         line = line.strip()
         arr = line.split(' ')
         cmd = arr[0]
@@ -265,6 +320,113 @@ def main()
 end
 
 
+def flood()
+    #Gets all the neighbors of $hostnode
+
+    puts "STARTING TO FLOOD"
+
+    neighbors = nil
+    string = nil
+
+    $lock.synchronize{
+        neighbors =  $network.adjacent($hostname)
+    }
+
+    if neighbors.empty? != true
+
+        $lock.synchronize{
+            string = "UPDATE #{$hostname}"
+            #Loop for building string to send to neighbors
+            $network.link.each {|str| 
+                if(str.dest != $hostname)
+                    string << " #{str.source} #{str.dest} #{str.cost} #{str.time}"
+                else  
+                    string << " #{str.source} #{str.dest} #{str.cost} #{str.time}"
+                end
+            }
+        }
+
+        #Loop for sending the flood message to client server
+        neighbors.each {|e| 
+            client = TCPSocket.open($local_ip, $nodesFile[e.dest]["PORT"]) 
+            client.puts string
+        }
+    else
+        puts "NEIGHBORS IS EMPTY"
+    end
+end
+
+#cmd[0] Flood message sent from probably don't need but can be used for debugging
+#cmd[1] name of srcNode
+#cmd[2] name of destNode
+#cmd[3] cost of edge
+#cmd[4] time of Edge
+#Shift or delete cmd[1],cmd[2], cmd[3], cmd[4] to get the next edge src,edge dest and edge time
+#******USE $rt to check if we need to change graph. will reduce the runtime********
+#These are strings so remember to change to integers to_i
+#Use dijkstras for next hop in $rt
+def updateTable(cmd)
+    puts "TRYING TO UPDATE TABLE"
+    sentFrom = cmd.shift
+    curr_edge_time = nil
+    node = $node_info.new
+    arr = nil
+
+    loop{
+        new_edge_time = cmd[3].to_i
+        new_edge_cost = cmd[2].to_i
+
+        $lock.synchronize{
+            curr_edge_time = $network.get_time(cmd[0],cmd[1])
+
+
+            if  curr_edge_time == 0
+                #name of srcNode,name of destNode,cost of edge,time of Edge
+                $network.undir_connection(cmd[0], cmd[1], new_edge_time, new_edge_cost)
+
+                if ($rt.has_key?(cmd[0]) != true)
+                    node.src = $hostname
+                    node.dst = cmd[0]
+                    node.cost = nil #do dijsktras
+                    node.nexthop = nil #do dijsktras
+                    $rt[cmd[0]] = node
+                end 
+                if($rt.has_key?(cmd[1]) != true)
+                    node.src = $hostname
+                    node.dst = cmd[1]
+                    node.cost = nil #do dijsktras
+                    node.nexthop = nil #do dijsktras
+                    $rt[cmd[1]] = node
+                  
+                end
+
+            elsif curr_edge_time < new_edge_time
+                $network.update_cost(cmd[0], cmd[1], new_edge_time, new_edge_cost)
+            end       
+        }
+        cmd.shift(4)
+        break if cmd.length < 4
+    }
+
+    $lock.synchronize{
+         $rt.each {|node, str|
+            puts "THIS IS WHERE DIJKSTRAS HAPPENS"
+            arr = $network.dijkstra($hostname, node)  
+            puts "THIS IS THE DIJKSTRA ARRAY: #{arr}"
+
+                ##FIND next hop for src
+                ##Caluate the dist and change cost
+                ##dist from $hostname to dest
+
+                ##LOOP THROUGH EVERY DESTNODE IN ROUTING TABLE AND CHANGE THE COST/DIST  and NEXTHOP####
+         }
+    }
+
+   
+
+
+end
+
 #A thread that handles all incoming connections
 def serverHandling()
      
@@ -276,28 +438,37 @@ def serverHandling()
 
             puts "THIS IS THE MESSAGE: #{message}"
 
-            arr = message.split(',')
+            arr = message.split(' ')
             server_cmd = arr[0]
             args = arr[1..-1]
 
             case server_cmd
-            when "EDGEB2"; edgeb_network(args)
+            when "EDGEB2"; $nodesFile[args[1]]["SOCKET"] = client; edgeb_network(args)
             when "EDGEU2"; edgeu_network(args)
-            when "EDGED2"; edged_network(args)
+            when "UPDATE"; updateTable(args)
             else STDERR.puts "ERROR: INVALID COMMAND \"#{server_cmd}\""
             end
-
+            client.close
         end
 
-        thread.join 
+        
     }
-
 
 end
 
+def clockHandle()
+    loop{
+        sleep(1.0)
+        $clock += 1
+    }
+end
 
-
-
+def updateRouting()
+    loop{
+        sleep($updateInterval)
+        flood()
+    }
+end
 
 def setup(hostname, port, nodes, config)
     #set up ports, server, buffers
@@ -306,10 +477,11 @@ def setup(hostname, port, nodes, config)
     $p = port.to_i
     $node_info = Struct.new(:src, :dst, :cost, :nexthop)
     $record_ip = Hash.new
-    network = Network.new
+    $network = Network.new
 
     $serv = TCPServer.open($p)
-    
+
+    #Opens nodes file and stores in a hash
     fHandle = File.open(nodes)
     while(line = fHandle.gets())
         arr = line.chomp().split(',')
@@ -320,29 +492,40 @@ def setup(hostname, port, nodes, config)
         $nodesFile[node_name]["PORT"] = node_port.to_i
             
     end
+    #Opens config file and set configurations 
+    fHandle = File.open(config)
+        while(line = fHandle.gets())
+        arr = line.chomp().split('=')
+
+        cmd_name = arr[0]
+        num = arr[1].to_i
+        case cmd_name
+        when "updateInterval"; $updateInterval = num
+        when "maxPayload" ; $maxPayload = num
+        when "pingTimeout"; $pingTimeout = num
+            
+        end
+      
+            
+    end
 
     $clock = Time.now
 
-    puts "Main Thread: #{Thread.current}"
-
-    begin
-        t1 = Thread.new do
-            puts "Child thread: #{Thread.current}"
-            serverHandling()
-        end
-    end    
+    Thread.new do
+        serverHandling()
+    end
+    Thread.new do
+        clockHandle()
+    end
+    Thread.new do
+        updateRouting()
+    end   
   
-   main()
+    main()
+
 end
 
 
-
-
-
-
 setup(ARGV[0], ARGV[1], ARGV[2], ARGV[3])
-
-
-
 
 
