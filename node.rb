@@ -38,8 +38,8 @@ class Network
     end
 
     def undir_connection(source, dest, time, cost)
-        @link.unshift Connection.new source, dest, time, cost 
-        @link.unshift Connection.new dest, source, time, cost 
+        @link.push Connection.new source, dest, time, cost 
+        @link.push Connection.new dest, source, time, cost 
     end
 
     def update_cost(source, dest, cost, time)
@@ -73,14 +73,14 @@ class Network
         return list
     end
 
-    def lowest_cost(arr)
+    def lowest_cost(hash)
         val = 100000000
         ret = nil
 
-        arr.each {|node|
-            if node.cost < val
-                ret = node
-                val = node.cost
+        hash.each {|key, cost|
+            if cost < val
+                ret = key
+                val = cost
             end
         }
         return ret
@@ -94,55 +94,62 @@ class Network
         }
     end
 
-
-    def dijkstra(source, dest)
-        puts "IN DIJKSTRA"
-
-        arr = []
-
-        queue = Array.new
+    def dijkstra(source)
         dist = Hash.new
         prev = Hash.new
+        queue = Hash.new
+        arr = []
+        visited = Array.new
+        visited.push(source)
 
         @link.each {|node|
-            dist[node] = 1000000000
-            prev[node] = nil
-            queue.push node
+            if node.dest != source
+                dist[node.dest] = 1000000000
+                prev[node.dest] = []
+            end
         }
 
-        dist[source] = 1000000000
-
-        queue.each{|node|
-            puts "NODE NAME: #{node.source}"
+        curr = adjacent(source)
+        curr.each {|node|
+            dist[node.dest] = node.cost
+            prev[node.dest].unshift(source)
+            queue[node.dest] = node.cost
+            visited.push node.dest
         }
 
-        puts "DISTANCE HASH IS: #{dist}"
-
+        puts "START PREV IS #{prev}"
 
         while queue.empty? != true
+            puts "CURRENT PREV IS #{prev}"
             curr = lowest_cost(queue)
             queue.delete(curr)
 
-            n = adjacent(curr.source)
+            n = adjacent(curr)
 
             n.each {|node|
-                temp = dist[curr] + node.cost
+                if node.dest != source
+                    if visited.include?(node.dest) != true
+                        visited.push node.dest
+                        queue[node.dest] = node.cost
+                    end
 
-                if temp < dist[node]
-                    dist[node] = temp
-                    prev[node] = curr
+                    temp = dist[curr] + node.cost
+
+                    if temp < dist[node.dest]
+                        dist[node.dest] = temp
+                        prev[node.dest] = Array.new(prev[curr])
+                        prev[node.dest].push(curr)
+                    end
                 end
             }
+
         end
 
-        puts "THE SOURCE IS: #{source}"
-        puts "THE DEST IS: #{dest}"
-
-        puts "PREV IS #{prev}"
-        puts "DIST is #{dist[dest]}"
+        puts "END DISTANCE IS: #{dist}"
+        puts "END PREV IS: #{prev}"
 
         arr[0] = prev
-        arr[1] = dist[dest]
+        arr[1] = dist
 
         return arr
 
@@ -369,61 +376,61 @@ def updateTable(cmd)
     puts "TRYING TO UPDATE TABLE"
     sentFrom = cmd.shift
     curr_edge_time = nil
+    new_edge_time = nil
+    new_edge_cost = nil
     node = $node_info.new
     arr = nil
-
-    loop{
-        new_edge_time = cmd[3].to_i
-        new_edge_cost = cmd[2].to_i
-
-        $lock.synchronize{
-            curr_edge_time = $network.get_time(cmd[0],cmd[1])
-
-
-            if  curr_edge_time == 0
-                #name of srcNode,name of destNode,cost of edge,time of Edge
-                $network.undir_connection(cmd[0], cmd[1], new_edge_time, new_edge_cost)
-
-                if ($rt.has_key?(cmd[0]) != true)
-                    node.src = $hostname
-                    node.dst = cmd[0]
-                    node.cost = nil #do dijsktras
-                    node.nexthop = nil #do dijsktras
-                    $rt[cmd[0]] = node
-                end 
-                if($rt.has_key?(cmd[1]) != true)
-                    node.src = $hostname
-                    node.dst = cmd[1]
-                    node.cost = nil #do dijsktras
-                    node.nexthop = nil #do dijsktras
-                    $rt[cmd[1]] = node
-                  
-                end
-
-            elsif curr_edge_time < new_edge_time
-                $network.update_cost(cmd[0], cmd[1], new_edge_time, new_edge_cost)
-            end       
-        }
-        cmd.shift(4)
-        break if cmd.length < 4
-    }
-
     $lock.synchronize{
-         $rt.each {|node, str|
-            puts "THIS IS WHERE DIJKSTRAS HAPPENS"
-            arr = $network.dijkstra($hostname, node)  
-            puts "THIS IS THE DIJKSTRA ARRAY: #{arr}"
+        loop{
+            new_edge_time = cmd[3].to_i
+            new_edge_cost = cmd[2].to_i
 
-                ##FIND next hop for src
-                ##Caluate the dist and change cost
-                ##dist from $hostname to dest
+            
+                curr_edge_time = $network.get_time(cmd[0],cmd[1])
 
-                ##LOOP THROUGH EVERY DESTNODE IN ROUTING TABLE AND CHANGE THE COST/DIST  and NEXTHOP####
-         }
+
+                if  curr_edge_time == 0
+                    #name of srcNode,name of destNode,cost of edge,time of Edge
+                    $network.undir_connection(cmd[0], cmd[1], new_edge_time, new_edge_cost)
+
+                    if ($rt.has_key?(cmd[0]) != true)
+                        node.src = $hostname
+                        node.dst = cmd[0]
+                        node.cost = nil #do dijsktras
+                        node.nexthop = nil #do dijsktras
+                        $rt[cmd[0]] = node
+                    end 
+                    if($rt.has_key?(cmd[1]) != true)
+                        node.src = $hostname
+                        node.dst = cmd[1]
+                        node.cost = nil #do dijsktras
+                        node.nexthop = nil #do dijsktras
+                        $rt[cmd[1]] = node
+                      
+                    end
+
+                elsif curr_edge_time < new_edge_time
+                    $network.update_cost(cmd[0], cmd[1], new_edge_time, new_edge_cost)
+                end       
+            
+            cmd.shift(4)
+            break if cmd.length < 4
+        }
+        arr = $network.dijkstra(cmd[1])  
+        $rt.each{|node, str|
+            if str.source == cmd[1] && str.dest == cmd[2]
+                hops = arr[0].fetch(cmd[2])
+                dis = arr[0].fetch(cmd[2])
+                str[:nexthop] = hops[1]
+                str[:cost] = dis
+            end
+
+        }
     }
+        
 
    
-
+}
 
 end
 
