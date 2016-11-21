@@ -113,14 +113,12 @@ class Network
         curr.each {|node|
             dist[node.dest] = node.cost
             prev[node.dest].unshift(source)
+            prev[node.dest].push(node.dest)
             queue[node.dest] = node.cost
             visited.push node.dest
         }
 
-        puts "START PREV IS #{prev}"
-
         while queue.empty? != true
-            puts "CURRENT PREV IS #{prev}"
             curr = lowest_cost(queue)
             queue.delete(curr)
 
@@ -138,21 +136,17 @@ class Network
                     if temp < dist[node.dest]
                         dist[node.dest] = temp
                         prev[node.dest] = Array.new(prev[curr])
-                        prev[node.dest].push(curr)
+                        prev[node.dest].push(node.dest)
                     end
                 end
             }
 
         end
 
-        puts "END DISTANCE IS: #{dist}"
-        puts "END PREV IS: #{prev}"
-
         arr[0] = prev
         arr[1] = dist
 
         return arr
-
     end
 end
 
@@ -379,59 +373,62 @@ def updateTable(cmd)
     new_edge_time = nil
     new_edge_cost = nil
     node = $node_info.new
+    update = $node_info.new 
     arr = nil
+    hops = []
+    lis = []
     $lock.synchronize{
         loop{
             new_edge_time = cmd[3].to_i
             new_edge_cost = cmd[2].to_i
 
             
-                curr_edge_time = $network.get_time(cmd[0],cmd[1])
+            curr_edge_time = $network.get_time(cmd[0],cmd[1])
 
 
-                if  curr_edge_time == 0
-                    #name of srcNode,name of destNode,cost of edge,time of Edge
-                    $network.undir_connection(cmd[0], cmd[1], new_edge_time, new_edge_cost)
+            if  curr_edge_time == 0
+                #name of srcNode,name of destNode,cost of edge,time of Edge
+                $network.undir_connection(cmd[0], cmd[1], new_edge_time, new_edge_cost)
 
-                    if ($rt.has_key?(cmd[0]) != true)
-                        node.src = $hostname
-                        node.dst = cmd[0]
-                        node.cost = nil #do dijsktras
-                        node.nexthop = nil #do dijsktras
-                        $rt[cmd[0]] = node
-                    end 
-                    if($rt.has_key?(cmd[1]) != true)
-                        node.src = $hostname
-                        node.dst = cmd[1]
-                        node.cost = nil #do dijsktras
-                        node.nexthop = nil #do dijsktras
-                        $rt[cmd[1]] = node
-                      
-                    end
+                if ($rt.has_key?(cmd[0]) != true)
+                    node.src = $hostname
+                    node.dst = cmd[0]
+                    node.cost = nil #do dijsktras
+                    node.nexthop = nil #do dijsktras
+                    $rt[cmd[0]] = node
+                end 
+                if($rt.has_key?(cmd[1]) != true)
+                    node.src = $hostname
+                    node.dst = cmd[1]
+                    node.cost = nil #do dijsktras
+                    node.nexthop = nil #do dijsktras
+                    $rt[cmd[1]] = node
+                  
+                end
 
-                elsif curr_edge_time < new_edge_time
-                    $network.update_cost(cmd[0], cmd[1], new_edge_time, new_edge_cost)
-                end       
+            elsif curr_edge_time < new_edge_time
+                $network.update_cost(cmd[0], cmd[1], new_edge_time, new_edge_cost)
+            end       
             
             cmd.shift(4)
             break if cmd.length < 4
         }
-        arr = $network.dijkstra(cmd[1])  
-        $rt.each{|node, str|
-            if str.source == cmd[1] && str.dest == cmd[2]
-                hops = arr[0].fetch(cmd[2])
-                dis = arr[0].fetch(cmd[2])
-                str[:nexthop] = hops[1]
-                str[:cost] = dis
-            end
+        puts "ABOUT TO RUN DIJKSTRAS"
+        arr = $network.dijkstra($hostname) 
+        puts "THIS IS THE RETURN OF DIJKSTRAS #{arr}" 
+        $rt.each{|n, str|
+            hops = arr[0]
+            lis = arr[1]
+            prevs = hops[n]
 
+            update.src = $hostname
+            update.dst = n
+            update.cost = lis[n]
+            update.nexthop = prevs[1]
+            $rt[str.dest] = update
         }
     }
         
-
-   
-}
-
 end
 
 #A thread that handles all incoming connections
