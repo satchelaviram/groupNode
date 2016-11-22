@@ -193,7 +193,6 @@ def edgeb_network(cmd)
 
        $network.undir_connection($hostname, cmd[1], cmd[3].to_i, 1) 
     }
-    puts "THIS IS THE ROUTING TABLE: #{$rt}"
 end
 
 def dumptable(cmd)
@@ -324,8 +323,6 @@ end
 def flood()
     #Gets all the neighbors of $hostnode
 
-    puts "STARTING TO FLOOD"
-
     neighbors = nil
     string = nil
 
@@ -367,7 +364,6 @@ end
 #These are strings so remember to change to integers to_i
 #Use dijkstras for next hop in $rt
 def updateTable(cmd)
-    puts "TRYING TO UPDATE TABLE"
     sentFrom = cmd.shift
     curr_edge_time = nil
     new_edge_time = nil
@@ -412,12 +408,9 @@ def updateTable(cmd)
             cmd.shift(4)
             break if cmd.length < 4
         }
-        puts "ABOUT TO RUN DIJKSTRAS"
         arr = $network.dijkstra($hostname) 
-        puts "THIS IS THE RETURN OF DIJKSTRAS #{arr}" 
         $rt.each_key {|key|
             update = $node_info.new 
-            puts "Key IS #{key}"
             hops = arr[0]
             lis = arr[1]
             prevs = hops[key]
@@ -426,7 +419,6 @@ def updateTable(cmd)
             update.cost = lis[key]
             update.nexthop = prevs[1]
             $rt[key] = update
-            puts "ROUTING TABLE #{$rt}"
         }
     }
 end
@@ -439,8 +431,6 @@ def serverHandling()
         thread = Thread.start($serv.accept) do |client|
            
             message = client.gets.chomp
-
-            puts "THIS IS THE MESSAGE: #{message}"
 
             arr = message.split(' ')
             server_cmd = arr[0]
