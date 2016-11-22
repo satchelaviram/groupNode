@@ -197,7 +197,7 @@ def edgeb_network(cmd)
 end
 
 def dumptable(cmd)
-    sleep(5)
+    sleep($updateInterval * 2)
     file = File.open(cmd[0], 'w')
     puts "ABOUT TO PRINT THE ROUTING TABLE: #{$rt}"
     $lock.synchronize{
