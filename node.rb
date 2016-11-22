@@ -197,7 +197,7 @@ def edgeb_network(cmd)
 end
 
 def dumptable(cmd)
-    sleep(1)
+    sleep(5)
     file = File.open(cmd[0], 'w')
     puts "ABOUT TO PRINT THE ROUTING TABLE: #{$rt}"
     $lock.synchronize{
@@ -373,10 +373,9 @@ def updateTable(cmd)
     new_edge_time = nil
     new_edge_cost = nil
     node = $node_info.new
-    update = $node_info.new 
     arr = nil
-    hops = []
-    lis = []
+    hops = nil
+    lis = nil
     $lock.synchronize{
         loop{
             new_edge_time = cmd[3].to_i
@@ -416,19 +415,20 @@ def updateTable(cmd)
         puts "ABOUT TO RUN DIJKSTRAS"
         arr = $network.dijkstra($hostname) 
         puts "THIS IS THE RETURN OF DIJKSTRAS #{arr}" 
-        $rt.each{|n, str|
+        $rt.each_key {|key|
+            update = $node_info.new 
+            puts "Key IS #{key}"
             hops = arr[0]
             lis = arr[1]
-            prevs = hops[n]
-
+            prevs = hops[key]
             update.src = $hostname
-            update.dst = n
-            update.cost = lis[n]
+            update.dst = key
+            update.cost = lis[key]
             update.nexthop = prevs[1]
-            $rt[str.dest] = update
+            $rt[key] = update
+            puts "ROUTING TABLE #{$rt}"
         }
     }
-        
 end
 
 #A thread that handles all incoming connections
@@ -480,7 +480,6 @@ def setup(hostname, port, nodes, config)
     $hostname = hostname
     $p = port.to_i
     $node_info = Struct.new(:src, :dst, :cost, :nexthop)
-    $record_ip = Hash.new
     $network = Network.new
 
     $serv = TCPServer.open($p)
