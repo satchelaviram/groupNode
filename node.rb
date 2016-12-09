@@ -332,9 +332,11 @@ def sendmsg(cmd)
     prev_size = 0
     max = $maxPayload
     $ack[rand] = false
+    circ_id = (-1111)
 
     if cmd[0] == "CIRCUITM"
-
+        path = $circuits[cmd[3]]
+        circ_id = cmd[3]
     else
         path = $full_path[cmd[1]]
     end
@@ -356,7 +358,7 @@ def sendmsg(cmd)
         counter = counter + 1
 
         client = TCPSocket.open($local_ip, $nodesFile[path[1]]["PORT"])
-        client.puts("SEND #{packet_str}")
+        client.puts("SEND #{packet_str} #{circ_id}")
     }
 
 end
@@ -375,9 +377,11 @@ def ftp(cmd)
     prev_size = 0
     max = $maxPayload
     $ack[rand] = false
+    circ_id = (-1111)
 
     if cmd[0] == "CIRCUITM"
-
+        path = $circuits[cmd[4]]
+        circ_id = cmd[4]
     else
         path = $full_path[cmd[1]]
     end
@@ -391,8 +395,6 @@ def ftp(cmd)
 
     counter = 0
 
-    puts "HI"
-
     fragment.each {|sub|
         packet = Packet.new rand, counter, fragment.size, cmd[1], sub, sub.bytesize, src, dst, ttl, path
         packet_str = packet.to_json
@@ -400,7 +402,7 @@ def ftp(cmd)
         counter = counter + 1
 
         client = TCPSocket.open($local_ip, $nodesFile[path[1]]["PORT"])
-        client.puts("SEND2 #{packet_str} #{cmd[2]} #{cmd[3]} #{size}")
+        client.puts("SEND2 #{packet_str} #{cmd[2]} #{cmd[3]} #{size} #{circ_id}")
 
     }  
 end
@@ -419,7 +421,7 @@ def file_forward(cmd)
             time = $clock.to_i
         end
         if $file_message.size == packet.num_frags
-            file_transfer(packet.src, time, cmd[1], cmd[2], cmd[3], packet.unique_id)
+            file_transfer(packet.src, time, cmd[1], cmd[2], cmd[3], packet.unique_id, cmd[4])
         end
     else
         packet_str = packet.to_json
@@ -427,11 +429,11 @@ def file_forward(cmd)
 
 
         client = TCPSocket.open($local_ip, $nodesFile[path[1]]["PORT"])
-        client.puts("SEND2 #{packet_str} #{cmd[1]} #{cmd[2]} #{cmd[3]}")
+        client.puts("SEND2 #{packet_str} #{cmd[1]} #{cmd[2]} #{cmd[3]} #{cmd[4]}")
     end
 end
 
-def file_transfer(source, time, file, dest, size, uniq)
+def file_transfer(source, time, file, dest, size, uniq, circ_id)
     string = $file_message[0]
     $file_message.delete(0)
 
@@ -445,10 +447,14 @@ def file_transfer(source, time, file, dest, size, uniq)
 
     FileUtils.mv(f, dest)
 
-    STDOUT.puts "FTP: #{source}-->#{dest}/#{file}"
+    if circ_id.to_i == (-1111)
+        STDOUT.puts "FTP: #{source}-->#{dest}/#{file}"
+    else
+        STDOUT.puts "CIRCUIT #{circ_id} FTP: #{source} --> #{dest}/#{file}"
+    end
 
     client = TCPSocket.open($local_ip, $nodesFile[source]["PORT"])
-    client.puts("SUCCESS #{file} #{$hostname} #{time} #{size} #{uniq}")
+    client.puts("SUCCESS #{file} #{$hostname} #{time} #{size} #{uniq} #{circ_id}")
 
 end
 
@@ -463,12 +469,17 @@ def transfer_success(cmd)
         speed = (cmd[3].to_i / diff.to_i)
     end
 
-    STDOUT.puts "FTP #{cmd[0]}-->#{cmd[1]} in #{diff} at #{speed}"
+    puts "HOSTNAME IS #{$hostname}, CIRCUIT ID IS #{cmd[5]}"
+
+    if cmd[5].to_i == (-1111)
+        STDOUT.puts "FTP #{cmd[0]}-->#{cmd[1]} in #{diff} at #{speed}"
+    else
+        STDOUT.puts "CIRCUIT #{cmd[5]} FTP #{cmd[0]} --> #{cmd[1]} in #{diff} at #{speed}"
+    end
     $ack[cmd[4]] = true
 
 
 end
-
 
 
 def packet_forward(cmd)
@@ -484,20 +495,19 @@ def packet_forward(cmd)
     if($hostname == packet.dest)
         $full_message[packet.sequence.to_i] = packet.data
         if $full_message.size == packet.num_frags
-            print_message(packet.src, packet.unique_id)
+            print_message(packet.src, packet.unique_id, cmd[1])
         end
     else
         packet_str = packet.to_json
         packet_str.gsub! ' ','|'
 
-
         client = TCPSocket.open($local_ip, $nodesFile[path[1]]["PORT"])
-        client.puts("SEND #{packet_str}")
+        client.puts("SEND #{packet_str} #{cmd[1]}")
     end
 
 end
 
-def print_message(cmd, uniq)
+def print_message(cmd, uniq, circ_id)
     string = $full_message[0]
     $full_message.delete(0)
 
@@ -505,7 +515,12 @@ def print_message(cmd, uniq)
         string.concat(value)
     }
 
-    STDOUT.puts "SENDMSG: #{cmd[0]}-->#{string}"
+    if circ_id.to_i == (-1111)
+        STDOUT.puts "SENDMSG: #{cmd[0]} --> #{string}"
+    else
+        STDOUT.puts "CIRCUIT #{circ_id} SENDMSG: #{cmd[0]} --> #{string}"
+    end
+
     $ack[cmd[1]] = true
 
 end
@@ -672,8 +687,15 @@ def traceroute(cmd)
     uniq = Random.new
     rand = uniq.rand(1024).to_i
     $ack[rand] = false
-    
-    path = $full_path[cmd[1]]
+
+    circ_id = (-1111)
+
+    if cmd[0] == "CIRCUITM"
+        path = $circuits[cmd[2]]
+        circ_id = cmd[2]
+    else
+        path = $full_path[cmd[1]]
+    end
     
     ttl = 1
     curr_time = $clock.to_i
@@ -688,7 +710,7 @@ def traceroute(cmd)
         end
 
         client = TCPSocket.open($local_ip, $nodesFile[path[1]]["PORT"])
-        client.puts("FORWARD #{$hostname} #{$hostname} #{cmd[1]} #{curr_time} #{ttl} #{hops} #{rand}")
+        client.puts("FORWARD #{$hostname} #{$hostname} #{cmd[1]} #{curr_time} #{ttl} #{hops} #{rand} #{circ_id}")
 
         counter = counter + 1
         ttl = ttl + 1
@@ -707,27 +729,30 @@ def forward_packet(cmd)
         nexthop = path[1]
 
         client = TCPSocket.open($local_ip, $nodesFile[nexthop]["PORT"])
-        client.puts("TOSOURCE #{cmd[0]} #{$hostname} #{cmd[3]} #{cmd[5]} #{cmd[6]}")
+        client.puts("TOSOURCE #{cmd[0]} #{$hostname} #{cmd[3]} #{cmd[5]} #{cmd[6]} #{cmd[7]}")
     else
         nexthp = path[1]
 
         client = TCPSocket.open($local_ip, $nodesFile[nexthp]["PORT"])
-        client.puts("FORWARD #{cmd[0]} #{$hostname} #{cmd[2]} #{cmd[3]} #{ttl} #{cmd[5]} #{cmd[6]}")
+        client.puts("FORWARD #{cmd[0]} #{$hostname} #{cmd[2]} #{cmd[3]} #{ttl} #{cmd[5]} #{cmd[6]} #{cmd[7]}")
     end
 end
 
 def source_console(cmd)
-
     time = ($clock.to_i - cmd[2].to_i)
 
     if $hostname == cmd[0]
-        STDOUT.puts "#{cmd[3]} #{cmd[1]} #{time}"
+        if cmd[5].to_i == (-1111)
+            STDOUT.puts "#{cmd[3]} #{cmd[1]} #{time}"
+        else
+            STDOUT.puts "CIRCUIT #{cmd[5]} FTP #{cmd[3]} #{cmd[1]} #{time}"
+        end
     else
         path = $full_path[cmd[0]]
         nexthp = path[1]
 
         client = TCPSocket.open($local_ip, $nodesFile[nexthp]["PORT"])
-        client.puts("TOSOURCE #{cmd[0]} #{cmd[1]} #{cmd[2]} #{cmd[3]} #{cmd[4]}")
+        client.puts("TOSOURCE #{cmd[0]} #{cmd[1]} #{cmd[2]} #{cmd[3]} #{cmd[4]} #{cmd[5]}")
     end
 
 end
@@ -782,7 +807,7 @@ def circuitb_network(cmd)
             else
                 curr_pos  = curr_pos-1
                 $circuits[id] = path
-                STDOUT.puts "CIRCUIT #{path[0]}/#{id}í°-- > #{$hostname} over #{path.length-2}"
+                STDOUT.puts "CIRCUIT #{path[0]}/#{id} -- > #{$hostname} over #{path.length-2}"
                 client = TCPSocket.open($local_ip, $nodesFile[path[curr_pos]]["PORT"])
                 client.puts("CIRCUITB2 #{id} #{dest} #{curr_pos} #{path_str} success")
                 client.close
@@ -837,27 +862,19 @@ def circuitb_network(cmd)
 end
 
 def circuitm(cmd)
-    puts "CIRCUITS PATH IS #{circuits}"
+    puts "CIRCUITS PATH IS #{$circuits}"
+    circ = cmd.shift
+    id = cmd.shift
+    comm = cmd.shift
+    cmd.push id
+    cmd.unshift circ
 
-    arr = message.split(' ')
-    server_cmd = arr[0]
-    args = arr[1..-1]
-    #            if server_cmd != "UPDATE" then puts "THIS IS THE MESSAGE: #{message}" end
-
-    case server_cmd
-
-
-    when "EDGEB2"; edgeb_network(args)
-    when "EDGEU2"; edgeu_network(args)
-    when "UPDATE"; updateTable(args)
-    when "TOSOURCE"; source_console(args)
-    when "PING";  ping_network(args)
-    when "FORWARD"; forward_packet(args)
-    when "SEND"; packet_forward(args)
-    when "SEND2"; file_forward(args)
-    when "SUCCESS"; transfer_success(args)
-    when "CIRCUITB2"; circuitb_network(args)
-
+    case comm
+    when "SENDMSG"; sendmsg(cmd)
+    when "PING"; ping(cmd)
+    when "TRACEROUTE"; traceroute(cmd)
+    when "FTP"; ftp(cmd)
+    end
 
 
 end
@@ -890,7 +907,7 @@ def main()
         when "TRACEROUTE"; traceroute(arr)
         when "FTP"; ftp(arr)
         when "CIRCUITB"; circuitb(args)
-        when "CIRCUITM"; circuitm(args)
+        when "CIRCUITM"; circuitm(arr)
         when "CIRCUITD"; circuitd(args)
         else STDERR.puts "ERROR: INVALID COMMAND \"#{cmd}\""
         end
